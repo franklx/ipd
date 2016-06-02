@@ -3,40 +3,40 @@
 [![Build Status](https://travis-ci.org/martinp/ipd.svg)](https://travis-ci.org/martinp/ipd)
 
 A simple service for looking up your IP address. This is the code that powers
-https://ifconfig.co
+https://digto.me
 
 ## Usage
 
 Just the business, please:
 
 ```
-$ curl ifconfig.co
+$ curl digto.me
 127.0.0.1
 
-$ http ifconfig.co
+$ http digto.me
 127.0.0.1
 
-$ wget -qO- ifconfig.co
+$ wget -qO- digto.me
 127.0.0.1
 
-$ fetch -qo- http://ifconfig.co
+$ fetch -qo- http://digto.me
 127.0.0.1
 ```
 
 Country and city lookup:
 
 ```
-$ http ifconfig.co/country
+$ http digto.me/country
 Elbonia
 
-$ http ifconfig.co/city
+$ http digto.me/city
 Bornyasherk
 ```
 
 As JSON:
 
 ```
-$ http --json ifconfig.co
+$ http --json digto.me
 {
   "city": "Bornyasherk",
   "country": "Elbonia",
@@ -47,7 +47,7 @@ $ http --json ifconfig.co
 Pass the appropriate flag (usually `-4` and `-6`) to your tool to switch between
 IPv4 and IPv6 lookup.
 
-The subdomains https://v4.ifconfig.co and https://v6.ifconfig.co can be used to
+The subdomains https://v4.digto.me and https://v6.digto.me can be used to
 force IPv4 or IPv6 lookup.
 
 ## Features

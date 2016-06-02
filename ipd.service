@@ -1,0 +1,14 @@
+[Unit]
+Description=ipd
+Requires=networking.service
+Wants=networking.service
+
+[Service]
+User=www-data
+WorkingDirectory=/opt/go/src/github.com/franklx/ipd
+ExecStart=/opt/go/bin/ipd -f GeoLite2-Country.mmdb
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

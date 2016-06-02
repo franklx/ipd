@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/martinp/ipd/api"
+	"github.com/franklx/ipd/api"
 )
 
 func main() {
