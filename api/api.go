@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
+
+	"github.com/Sirupsen/logrus"
+
+	"math/big"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -16,7 +19,10 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const jsonMediaType = "application/json"
+const (
+	jsonMediaType = "application/json"
+	textMediaType = "text/plain"
+)
 
 var userAgentPattern = regexp.MustCompile(
 	`^(?:curl|Wget|fetch\slibfetch|ddclient|Go-http-client|HTTPie)\/.*|Go\s1\.1\spackage\shttp$`,
@@ -26,13 +32,15 @@ type API struct {
 	Template string
 	IPHeader string
 	oracle   Oracle
+	log      *logrus.Logger
 }
 
 type Response struct {
-	IP       net.IP `json:"ip"`
-	Country  string `json:"country,omitempty"`
-	City     string `json:"city,omitempty"`
-	Hostname string `json:"hostname,omitempty"`
+	IP        net.IP   `json:"ip"`
+	IPDecimal *big.Int `json:"ip_decimal"`
+	Country   string   `json:"country,omitempty"`
+	City      string   `json:"city,omitempty"`
+	Hostname  string   `json:"hostname,omitempty"`
 }
 
 type PortResponse struct {
@@ -41,8 +49,18 @@ type PortResponse struct {
 	Reachable bool   `json:"reachable"`
 }
 
-func New(oracle Oracle) *API {
-	return &API{oracle: oracle}
+func New(oracle Oracle, logger *logrus.Logger) *API {
+	return &API{oracle: oracle, log: logger}
+}
+
+func ipToDecimal(ip net.IP) *big.Int {
+	i := big.NewInt(0)
+	if to4 := ip.To4(); to4 != nil {
+		i.SetBytes(to4)
+	} else {
+		i.SetBytes(ip)
+	}
+	return i
 }
 
 func ipFromRequest(header string, r *http.Request) (net.IP, error) {
@@ -66,23 +84,25 @@ func (a *API) newResponse(r *http.Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
+	ipDecimal := ipToDecimal(ip)
 	country, err := a.oracle.LookupCountry(ip)
 	if err != nil {
-		log.Print(err)
+		a.log.Debug(err)
 	}
 	city, err := a.oracle.LookupCity(ip)
 	if err != nil {
-		log.Print(err)
+		a.log.Debug(err)
 	}
 	hostnames, err := a.oracle.LookupAddr(ip)
 	if err != nil {
-		log.Print(err)
+		a.log.Debug(err)
 	}
 	return Response{
-		IP:       ip,
-		Country:  country,
-		City:     city,
-		Hostname: strings.Join(hostnames, " "),
+		IP:        ip,
+		IPDecimal: ipDecimal,
+		Country:   country,
+		City:      city,
+		Hostname:  strings.Join(hostnames, " "),
 	}, nil
 }
 
@@ -197,9 +217,6 @@ type appHandler func(http.ResponseWriter, *http.Request) *appError
 
 func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if e := fn(w, r); e != nil { // e is *appError
-		if e.Error != nil {
-			log.Print(e.Error)
-		}
 		// When Content-Type for error is JSON, we need to marshal the response into JSON
 		if e.IsJSON() {
 			var data = struct {
@@ -220,7 +237,7 @@ func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *API) Handlers() http.Handler {
+func (a *API) Router() http.Handler {
 	r := mux.NewRouter()
 
 	// JSON
@@ -229,9 +246,10 @@ func (a *API) Handlers() http.Handler {
 
 	// CLI
 	r.Handle("/", appHandler(a.CLIHandler)).Methods("GET").MatcherFunc(cliMatcher)
-	r.Handle("/ip", appHandler(a.CLIHandler)).Methods("GET").MatcherFunc(cliMatcher)
-	r.Handle("/country", appHandler(a.CLICountryHandler)).Methods("GET").MatcherFunc(cliMatcher)
-	r.Handle("/city", appHandler(a.CLICityHandler)).Methods("GET").MatcherFunc(cliMatcher)
+	r.Handle("/", appHandler(a.CLIHandler)).Methods("GET").Headers("Accept", textMediaType)
+	r.Handle("/ip", appHandler(a.CLIHandler)).Methods("GET")
+	r.Handle("/country", appHandler(a.CLICountryHandler)).Methods("GET")
+	r.Handle("/city", appHandler(a.CLICityHandler)).Methods("GET")
 
 	// Browser
 	r.Handle("/", appHandler(a.DefaultHandler)).Methods("GET")
@@ -243,9 +261,4 @@ func (a *API) Handlers() http.Handler {
 	r.NotFoundHandler = appHandler(a.NotFoundHandler)
 
 	return r
-}
-
-func (a *API) ListenAndServe(addr string) error {
-	http.Handle("/", a.Handlers())
-	return http.ListenAndServe(addr, nil)
 }

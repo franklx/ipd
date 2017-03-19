@@ -3,6 +3,7 @@ package api
 import (
 	"io/ioutil"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -24,13 +25,13 @@ func newTestAPI() *API {
 	return &API{oracle: &mockOracle{}}
 }
 
-func httpGet(url string, json bool, userAgent string) (string, int, error) {
+func httpGet(url string, acceptMediaType string, userAgent string) (string, int, error) {
 	r, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", 0, err
 	}
-	if json {
-		r.Header.Set("Accept", "application/json")
+	if acceptMediaType != "" {
+		r.Header.Set("Accept", acceptMediaType)
 	}
 	r.Header.Set("User-Agent", userAgent)
 	res, err := http.DefaultClient.Do(r)
@@ -45,24 +46,27 @@ func httpGet(url string, json bool, userAgent string) (string, int, error) {
 	return string(data), res.StatusCode, nil
 }
 
-func TestClIHandlers(t *testing.T) {
+func TestCLIHandlers(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
-	s := httptest.NewServer(newTestAPI().Handlers())
+	s := httptest.NewServer(newTestAPI().Router())
 
 	var tests = []struct {
-		url    string
-		out    string
-		status int
+		url             string
+		out             string
+		status          int
+		userAgent       string
+		acceptMediaType string
 	}{
-		{s.URL, "127.0.0.1\n", 200},
-		{s.URL + "/ip", "127.0.0.1\n", 200},
-		{s.URL + "/country", "Elbonia\n", 200},
-		{s.URL + "/city", "Bornyasherk\n", 200},
-		{s.URL + "/foo", "404 page not found", 404},
+		{s.URL, "127.0.0.1\n", 200, "curl/7.43.0", ""},
+		{s.URL, "127.0.0.1\n", 200, "foo/bar", textMediaType},
+		{s.URL + "/ip", "127.0.0.1\n", 200, "", ""},
+		{s.URL + "/country", "Elbonia\n", 200, "", ""},
+		{s.URL + "/city", "Bornyasherk\n", 200, "", ""},
+		{s.URL + "/foo", "404 page not found", 404, "", ""},
 	}
 
 	for _, tt := range tests {
-		out, status, err := httpGet(tt.url /* json = */, false, "curl/7.2.6.0")
+		out, status, err := httpGet(tt.url, tt.acceptMediaType, tt.userAgent)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,14 +81,14 @@ func TestClIHandlers(t *testing.T) {
 
 func TestJSONHandlers(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
-	s := httptest.NewServer(newTestAPI().Handlers())
+	s := httptest.NewServer(newTestAPI().Router())
 
 	var tests = []struct {
 		url    string
 		out    string
 		status int
 	}{
-		{s.URL, `{"ip":"127.0.0.1","country":"Elbonia","city":"Bornyasherk","hostname":"localhost"}`, 200},
+		{s.URL, `{"ip":"127.0.0.1","ip_decimal":2130706433,"country":"Elbonia","city":"Bornyasherk","hostname":"localhost"}`, 200},
 		{s.URL + "/port/foo", `{"error":"404 page not found"}`, 404},
 		{s.URL + "/port/0", `{"error":"Invalid port: 0"}`, 400},
 		{s.URL + "/port/65356", `{"error":"Invalid port: 65356"}`, 400},
@@ -93,7 +97,7 @@ func TestJSONHandlers(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		out, status, err := httpGet(tt.url /* json = */, true, "curl/7.2.6.0")
+		out, status, err := httpGet(tt.url, jsonMediaType, "curl/7.2.6.0")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -158,6 +162,22 @@ func TestCLIMatcher(t *testing.T) {
 		r := &http.Request{Header: http.Header{"User-Agent": []string{tt.in}}}
 		if got := cliMatcher(r, nil); got != tt.out {
 			t.Errorf("Expected %t, got %t for %q", tt.out, got, tt.in)
+		}
+	}
+}
+
+func TestIPToDecimal(t *testing.T) {
+	var tests = []struct {
+		in  string
+		out *big.Int
+	}{
+		{"127.0.0.1", big.NewInt(2130706433)},
+		{"::1", big.NewInt(1)},
+	}
+	for _, tt := range tests {
+		i := ipToDecimal(net.ParseIP(tt.in))
+		if i.Cmp(tt.out) != 0 {
+			t.Errorf("Expected %d, got %d for IP %s", tt.out, i, tt.in)
 		}
 	}
 }

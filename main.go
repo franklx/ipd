@@ -1,10 +1,13 @@
 package main
 
 import (
+	"net/http"
+
 	flags "github.com/jessevdk/go-flags"
 
-	"log"
 	"os"
+
+	"github.com/Sirupsen/logrus"
 
 	"github.com/franklx/ipd/api"
 )
@@ -16,13 +19,21 @@ func main() {
 		Listen        string `short:"l" long:"listen" description:"Listening address" value-name:"ADDR" default:":8080"`
 		ReverseLookup bool   `short:"r" long:"reverse-lookup" description:"Perform reverse hostname lookups"`
 		PortLookup    bool   `short:"p" long:"port-lookup" description:"Enable port lookup"`
-		Template      string `short:"t" long:"template" description:"Path to template" default:"index.html"`
-		IPHeader      string `short:"H" long:"trusted-header" description:"Header to trust for remote IP, if present (e.g. X-Real-IP)"`
+		Template      string `short:"t" long:"template" description:"Path to template" default:"index.html" value-name:"FILE"`
+		IPHeader      string `short:"H" long:"trusted-header" description:"Header to trust for remote IP, if present (e.g. X-Real-IP)" value-name:"NAME"`
+		LogLevel      string `short:"L" long:"log-level" description:"Log level to use" default:"info" choice:"debug" choice:"info" choice:"warn" choice:"error" choice:"fatal" choice:"panic"`
 	}
 	_, err := flags.ParseArgs(&opts, os.Args)
 	if err != nil {
 		os.Exit(1)
 	}
+
+	log := logrus.New()
+	level, err := logrus.ParseLevel(opts.LogLevel)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Level = level
 
 	oracle := api.NewOracle()
 	if opts.ReverseLookup {
@@ -49,12 +60,12 @@ func main() {
 		log.Printf("Trusting header %s to contain correct remote IP", opts.IPHeader)
 	}
 
-	api := api.New(oracle)
+	api := api.New(oracle, log)
 	api.Template = opts.Template
 	api.IPHeader = opts.IPHeader
 
 	log.Printf("Listening on %s", opts.Listen)
-	if err := api.ListenAndServe(opts.Listen); err != nil {
+	if err := http.ListenAndServe(opts.Listen, api.Router()); err != nil {
 		log.Fatal(err)
 	}
 }
