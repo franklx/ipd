@@ -5,8 +5,8 @@ Wants=networking.service
 
 [Service]
 User=www-data
-WorkingDirectory=/opt/go/src/github.com/franklx/ipd
-ExecStart=/opt/go/bin/ipd -f GeoLite2-Country.mmdb
+WorkingDirectory=/opt/go/share
+ExecStart=/opt/go/bin/ipd -H X-Real-IP -f GeoLite2-Country.mmdb -c GeoLite2-City.mmdb -r -p
 Restart=on-failure
 
 [Install]
